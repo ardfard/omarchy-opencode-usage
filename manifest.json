@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "id": "local.opencode-usage",
+  "name": "OpenCode Usage",
+  "version": "1.0.0",
+  "author": "ardfard",
+  "license": "MIT",
+  "description": "Local OpenCode usage: per-model tokens, cost ranking, day sparkline, and OpenCode Go limit windows.",
+  "kinds": ["bar-widget"],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "OpenCode Usage",
+    "description": "Click: usage panel (limits + models by cost). Middle/right click: force refresh.",
+    "category": "AI",
+    "aliases": ["opencode-usage", "opencode-tokens", "token-usage"],
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "refreshIntervalSec": 300,
+      "windowDays": 7,
+      "maxModels": 8,
+      "sortBy": "cost"
+    },
+    "schema": [
+      {
+        "key": "refreshIntervalSec",
+        "type": "integer",
+        "label": "Refresh interval (seconds)",
+        "description": "How often to re-run the local collector. Data comes from the local opencode.db, so short intervals are cheap.",
+        "min": 60,
+        "max": 3600,
+        "step": 60,
+        "defaultValue": 300
+      },
+      {
+        "key": "windowDays",
+        "type": "integer",
+        "label": "Usage window (days)",
+        "description": "How many days of history feed the model ranking, the cost total and the sparkline.",
+        "min": 1,
+        "max": 30,
+        "step": 1,
+        "defaultValue": 7
+      },
+      {
+        "key": "maxModels",
+        "type": "integer",
+        "label": "Max model rows",
+        "description": "How many models to show individually; the rest are folded into an \"other\" row.",
+        "min": 3,
+        "max": 15,
+        "step": 1,
+        "defaultValue": 8
+      },
+      {
+        "key": "sortBy",
+        "type": "enum",
+        "label": "Sort model list by",
+        "options": ["cost", "tokens", "messages"],
+        "defaultValue": "cost"
+      }
+    ]
+  }
+}

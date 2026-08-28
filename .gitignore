@@ -1,0 +1,14 @@
+# Editor/OS noise
+.DS_Store
+*.swp
+*~
+
+# jj/git internals (colocated repos still keep these out of commits by default)
+.jj/
+
+# Backups
+*.bak
+*.backup
+
+# Build/test scratch
+*.log
