@@ -13,17 +13,16 @@ Panel {
   moduleName: "local.opencode-go-usage"
   ipcTarget: "local.opencode-go-usage"
 
-  // ---- injected / derived chrome -----------------------------------------
   readonly property color foreground: bar ? bar.barForeground : Color.foreground
   readonly property color urgent: bar ? bar.urgent : Color.urgent
   readonly property color dim: Qt.darker(foreground, 1.35)
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
-  readonly property var rows: service.models.length ? Model.summarize(service.models, settingsSortBy(), service.maxModels) : []
-  readonly property double peakTokens: Model.maxTokenTotal(rows)
-  readonly property bool hasData: rows.length > 0
-  // null-safe totals for first-paint bindings
-  readonly property var safeTotals: service.totals || { messages: 0, tokens: 0, cost: 0 }
+  readonly property var picks: service.picks
+  readonly property var rows: service.catalog.length
+    ? Model.summarizeCatalog(service.catalog, service.pricing, settingsSortBy(), service.maxModels, service.picks)
+    : []
+  readonly property bool hasCatalog: service.catalog.length > 0
   property double nowMs: Date.now()
 
   Timer {
@@ -35,7 +34,7 @@ Panel {
 
   function settingsSortBy() {
     var v = String(root.settings && root.settings.sortBy !== undefined ? root.settings.sortBy : "cost")
-    return ["cost", "tokens", "messages"].indexOf(v) >= 0 ? v : "cost"
+    return ["cost", "quota", "name"].indexOf(v) >= 0 ? v : "cost"
   }
 
   implicitWidth: button.implicitWidth
@@ -55,14 +54,10 @@ Panel {
     settings: root.settings
   }
 
-  // ---- bar pill -----------------------------------------------------------
   WidgetButton {
     id: button
     anchors.fill: parent
     bar: root.bar
-    // "·" sentinel: with text "" hasVisualContent is false and WidgetButton
-    // zeroes the pill's opacity -> invisible AND dead to clicks. The middot
-    // keeps hasVisualContent true (opacity 1) while labelVisible hides it.
     text: "·"
     labelVisible: false
     fixedWidth: Style.space(32)
@@ -85,7 +80,6 @@ Panel {
     }
   }
 
-  // ---- popout -------------------------------------------------------------
   KeyboardPanel {
     id: panel
     anchorItem: button
@@ -94,7 +88,7 @@ Panel {
     open: root.opened
     focusTarget: catcher
     contentWidth: panel.fittedContentWidth(Style.space(360))
-    contentHeight: panel.fittedContentHeight(body.implicitHeight, Style.space(560))
+    contentHeight: panel.fittedContentHeight(body.implicitHeight, Style.space(520))
 
     PanelKeyCatcher {
       id: catcher
@@ -120,7 +114,6 @@ Panel {
           width: scroll.availableWidth
           spacing: Style.space(7)
 
-          // header row — everything inline for compactness
           Item {
             width: parent.width
             implicitHeight: Math.max(headerTitle.implicitHeight, headerMeta.implicitHeight)
@@ -161,19 +154,8 @@ Panel {
             wrapMode: Text.WordWrap
           }
 
-          Text {
-            textFormat: Text.PlainText
-            visible: !service.refreshing && !root.hasData && service.lastError === ""
-            width: parent.width
-            text: "No Go usage logged in the last " + service.windowDays + " day(s)."
-            color: root.dim
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.bodySmall
-          }
-
           PanelSeparator { width: parent.width; foreground: root.foreground }
 
-          // ---- OpenCode Go limit windows (5h / weekly / monthly) ----
           Item {
             visible: !!service.windows
             width: parent.width
@@ -232,7 +214,6 @@ Panel {
                 }
 
                 Rectangle {
-                  id: bar
                   Layout.fillWidth: true
                   height: Style.space(5)
                   radius: height / 2
@@ -275,8 +256,9 @@ Panel {
 
           Text {
             textFormat: Text.PlainText
+            visible: !service.windows || !service.windows.rolling
             width: parent.width
-            text: "Best value on Go: MiMo-V2.5 (stretches $ limits furthest)"
+            text: "Add opencode-go key in ~/.local/share/opencode/auth.json for limits."
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
@@ -285,113 +267,42 @@ Panel {
 
           PanelSeparator { width: parent.width; foreground: root.foreground }
 
-          // totals strip: three inline figures instead of cards
-          Row {
+          Text {
+            textFormat: Text.PlainText
             width: parent.width
+            visible: !!root.picks.volume
+            text: "Stretch quota: opencode-go/" + root.picks.volume.id
+              + " · " + Model.formatReq5h(root.picks.volume.requests5h)
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            wrapMode: Text.WordWrap
+          }
 
-            Column {
-              width: parent.width / 3
-              Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: root.hasData ? Model.tokenCount(root.safeTotals.tokens) : "—"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall; font.bold: true; textFormat: Text.PlainText }
-              Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: "tokens"; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; textFormat: Text.PlainText }
-            }
-            Column {
-              width: parent.width / 3
-              Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: root.hasData ? String(root.safeTotals.messages) : "—"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall; font.bold: true; textFormat: Text.PlainText }
-              Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: "messages"; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; textFormat: Text.PlainText }
-            }
-            Column {
-              width: parent.width / 3
-              Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: root.hasData ? Model.money(root.safeTotals.cost) : "—"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall; font.bold: true; textFormat: Text.PlainText }
-              Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: "cost"; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; textFormat: Text.PlainText }
-            }
+          Text {
+            textFormat: Text.PlainText
+            width: parent.width
+            visible: !!root.picks.value
+            text: "Best value: opencode-go/" + root.picks.value.id
+              + " · " + Model.formatReq5h(root.picks.value.requests5h)
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            wrapMode: Text.WordWrap
           }
 
           PanelSeparator { width: parent.width; foreground: root.foreground }
 
-          // tokens by day — one column per day: value on top, bar, weekday below
-          Row {
-            id: dayChart
-            width: parent.width
-
-            readonly property var days: service.days
-            readonly property int dayCount: days.length
-            readonly property double peak: Math.max(1, Model.recentPeak(days))
-            readonly property double colWidth: dayCount > 0 ? width / dayCount : width
-            readonly property int barArea: Style.space(26)
-            // monospace advance is ~0.6em; drop the captions before they collide
-            // (windowDays goes up to 30, which leaves each column ~12px wide)
-            readonly property bool showValues: colWidth >= Style.font.caption * 3.6
-            readonly property bool showLabels: colWidth >= Style.font.caption * 2.4
-
-            Repeater {
-              model: dayChart.days
-
-              delegate: Column {
-                id: dayCol
-                required property var modelData
-                required property int index
-                readonly property bool isToday: index === dayChart.dayCount - 1
-                readonly property double tokens: Model.dayTokens(modelData)
-
-                width: dayChart.colWidth
-                spacing: Style.space(3)
-
-                Text {
-                  textFormat: Text.PlainText
-                  width: parent.width
-                  visible: dayChart.showValues
-                  horizontalAlignment: Text.AlignHCenter
-                  text: Model.tokenCount(dayCol.tokens)
-                  color: root.dim
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
-                }
-
-                Item {
-                  width: parent.width
-                  height: dayChart.barArea
-
-                  Rectangle {
-                    anchors.bottom: parent.bottom
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    width: Math.max(2, dayChart.colWidth * 0.42)
-                    // idle days stay empty; any traffic at all keeps a hairline
-                    height: dayCol.tokens > 0
-                      ? Math.max(1, dayChart.barArea * dayCol.tokens / dayChart.peak)
-                      : 0
-                    radius: Style.space(1)
-                    color: dayCol.isToday ? root.foreground : root.dim
-                    Behavior on height { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
-                  }
-                }
-
-                Text {
-                  textFormat: Text.PlainText
-                  width: parent.width
-                  visible: dayChart.showLabels
-                  horizontalAlignment: Text.AlignHCenter
-                  text: Model.dayLabel(dayCol.modelData.date)
-                  color: dayCol.isToday ? root.foreground : root.dim
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
-                }
-              }
-            }
-          }
-
-          PanelSeparator { width: parent.width; foreground: root.foreground }
-
-          // models by cost/tokens/messages
           Item {
             width: parent.width
-            implicitHeight: Math.max(modelsHeader.implicitHeight, sortLabel.implicitHeight)
+            implicitHeight: Math.max(catalogHeader.implicitHeight, sortLabel.implicitHeight)
 
             Text {
               textFormat: Text.PlainText
-              id: modelsHeader
+              id: catalogHeader
               anchors.left: parent.left
               anchors.verticalCenter: parent.verticalCenter
-              text: "BY MODEL"
+              text: "CATALOG"
               color: root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
@@ -403,7 +314,7 @@ Panel {
               id: sortLabel
               anchors.right: parent.right
               anchors.verticalCenter: parent.verticalCenter
-              text: root.settingsSortBy() + " ↓"
+              text: root.settingsSortBy() + " ↑"
               color: root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
@@ -414,31 +325,33 @@ Panel {
             model: root.rows
 
             delegate: RowLayout {
-              id: modelRow
+              id: catalogRow
               required property var modelData
               width: body.width
               spacing: Style.space(6)
 
               Column {
-                Layout.preferredWidth: root.nameColWidth(modelRow.modelData.displayName)
+                Layout.preferredWidth: root.nameColWidth(catalogRow.modelData.displayName)
                 Layout.alignment: Qt.AlignVCenter
 
                 Text {
                   textFormat: Text.PlainText
                   width: parent.width
-                  text: modelData.displayName
-                  color: modelData.isOther ? root.dim : root.foreground
+                  text: modelData.isOther ? modelData.displayName : modelData.displayName
+                    + (modelData.pick ? " · " + Model.pickLabel(modelData.pick) : "")
+                  color: modelData.isOther ? root.dim : (modelData.pick ? root.foreground : root.foreground)
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.caption
+                  font.bold: !!modelData.pick
                   elide: Text.ElideMiddle
                 }
 
                 Text {
                   textFormat: Text.PlainText
                   width: parent.width
-                  visible: !modelData.isOther
-                  text: Model.providerTag(modelData.provider)
-                  color: root.dim
+                  visible: !modelData.isOther && modelData.note !== ""
+                  text: modelData.note
+                  color: root.urgent
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.caption - 1 < 8 ? 8 : Style.font.caption - 1
                 }
@@ -452,19 +365,20 @@ Panel {
                 Text {
                   textFormat: Text.PlainText
                   anchors.right: parent.right
-                  text: Model.tokenCount(modelData.tokens.total) + " tok"
+                  visible: !modelData.isOther
+                  text: modelData.hasPricing
+                    ? (Model.pricePer1M(modelData.inputPer1M) + " in · " + Model.pricePer1M(modelData.outputPer1M) + " out")
+                    : "pricing unknown"
                   color: root.foreground
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.caption
-                  font.bold: !modelData.isOther
                 }
 
                 Text {
                   textFormat: Text.PlainText
                   anchors.right: parent.right
-                  text: modelData.isOther
-                    ? Model.tokenCount(modelData.messages) + " msgs"
-                    : (Model.money(modelData.cost) + " · " + Model.providerTag(modelData.provider))
+                  visible: !modelData.isOther
+                  text: Model.formatReq5h(modelData.requests5h)
                   color: root.dim
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.caption
@@ -475,9 +389,9 @@ Panel {
 
           Text {
             textFormat: Text.PlainText
-            visible: !root.rows.length && !service.refreshing
+            visible: !root.hasCatalog && !service.refreshing && service.lastError === ""
             width: parent.width
-            text: "No models."
+            text: "Could not load Go catalog."
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
@@ -488,6 +402,6 @@ Panel {
   }
 
   function nameColWidth(name) {
-    return Math.min(Style.space(150), Style.space(9) * String(name).length + Style.space(20))
+    return Math.min(Style.space(170), Style.space(9) * String(name).length + Style.space(24))
   }
 }

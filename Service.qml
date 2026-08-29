@@ -6,17 +6,18 @@ import "Model.js" as Model
 Item {
   id: root
   property var settings: ({})
-  property var models: []
-  property var days: []
-  property var totals: null
+  property var catalog: []
+  property var pricing: ({})
   property var windows: ({})
+  property var picks: ({ volume: null, value: null })
   property bool refreshing: false
   property string lastError: ""
   property date lastUpdated: new Date(0)
+  property date picksUpdated: new Date(0)
   readonly property string collectorScript: decodeURIComponent(String(Qt.resolvedUrl("collector.sh")).replace(/^file:\/\//, ""))
-  readonly property int refreshIntervalSec: intSetting("refreshIntervalSec", 300, 60, 3600)
-  readonly property int windowDays: intSetting("windowDays", 7, 1, 30)
-  readonly property int maxModels: intSetting("maxModels", 8, 3, 15)
+  readonly property int refreshIntervalSec: intSetting("refreshIntervalSec", 3600, 60, 3600)
+  readonly property int maxModels: intSetting("maxModels", 12, 3, 30)
+  readonly property int picksRefreshSec: 86400
 
   function setting(name, fallback) {
     var value = settings ? settings[name] : undefined
@@ -33,7 +34,7 @@ Item {
     if (refreshing || collector.running) return
     refreshing = true
     lastError = ""
-    collector.command = ["bash", root.collectorScript, String(root.windowDays)]
+    collector.command = ["bash", root.collectorScript]
     collector.running = true
   }
 
@@ -62,12 +63,16 @@ Item {
       }
       var parsed = Model.parseCollector(collectorOutput.text)
       if (!parsed.ok) { root.lastError = parsed.error; return }
-      root.models = parsed.data.models
-      root.days = parsed.data.days
-      root.totals = parsed.data.totals
+      root.catalog = parsed.data.catalog
+      root.pricing = parsed.data.pricing
       root.windows = parsed.data.windows
       root.lastError = parsed.data.error
       root.lastUpdated = new Date()
+      var stalePicks = !root.picksUpdated || root.picksUpdated.getTime() === 0
+        || (Date.now() - root.picksUpdated.getTime()) >= root.picksRefreshSec * 1000
+      if (stalePicks && parsed.data.catalog.length)
+        root.picks = Model.catalogPicks(parsed.data.catalog, parsed.data.pricing)
+      if (stalePicks) root.picksUpdated = new Date()
     }
   }
 }

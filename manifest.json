@@ -5,22 +5,21 @@
   "version": "1.0.0",
   "author": "ardfard",
   "license": "MIT",
-  "description": "OpenCode Go usage: subscription limit windows, per-model tokens and cost, day sparkline. Ignores other OpenCode providers.",
+  "description": "OpenCode Go limits and catalog: subscription windows plus models sorted by cost from the Go API.",
   "kinds": ["bar-widget"],
   "entryPoints": {
     "barWidget": "Panel.qml"
   },
   "barWidget": {
     "displayName": "OpenCode Go",
-    "description": "Click: Go limits and model breakdown. Middle/right click: force refresh.",
+    "description": "Click: Go limits and cheap models. Middle/right click: force refresh.",
     "category": "AI",
     "aliases": ["opencode-go", "opencode-go-usage", "opencode-usage", "go-limits"],
     "allowMultiple": false,
     "defaultSection": "right",
     "defaults": {
-      "refreshIntervalSec": 300,
-      "windowDays": 7,
-      "maxModels": 8,
+      "refreshIntervalSec": 3600,
+      "maxModels": 12,
       "sortBy": "cost"
     },
     "schema": [
@@ -28,37 +27,27 @@
         "key": "refreshIntervalSec",
         "type": "integer",
         "label": "Refresh interval (seconds)",
-        "description": "How often to re-run the collector (local opencode-go rows + Go limit API).",
+        "description": "How often to re-fetch Go limits and the model catalog.",
         "min": 60,
         "max": 3600,
         "step": 60,
-        "defaultValue": 300
-      },
-      {
-        "key": "windowDays",
-        "type": "integer",
-        "label": "Usage window (days)",
-        "description": "How many days of OpenCode Go history feed the model ranking, cost total and sparkline.",
-        "min": 1,
-        "max": 30,
-        "step": 1,
-        "defaultValue": 7
+        "defaultValue": 3600
       },
       {
         "key": "maxModels",
         "type": "integer",
-        "label": "Max model rows",
-        "description": "How many models to show individually; the rest are folded into an \"other\" row.",
+        "label": "Max catalog rows",
+        "description": "How many models to show; the rest fold into \"other\".",
         "min": 3,
-        "max": 15,
+        "max": 30,
         "step": 1,
-        "defaultValue": 8
+        "defaultValue": 12
       },
       {
         "key": "sortBy",
         "type": "enum",
-        "label": "Sort model list by",
-        "options": ["cost", "tokens", "messages"],
+        "label": "Sort catalog by",
+        "options": ["cost", "quota", "name"],
         "defaultValue": "cost"
       }
     ]

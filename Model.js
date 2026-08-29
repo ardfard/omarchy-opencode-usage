@@ -93,23 +93,21 @@ function parseCollector(text) {
   try {
     var parsed = JSON.parse(String(text || ""))
     if (!parsed || typeof parsed !== "object" || typeof parsed.status !== "string"
-        || !Array.isArray(parsed.models)) {
-      return { ok: false, error: "Could not parse OpenCode Go usage" }
+        || !Array.isArray(parsed.catalog)) {
+      return { ok: false, error: "Could not parse OpenCode Go data" }
     }
     return {
       ok: true,
       data: {
         windows: parsed.windows && typeof parsed.windows === "object" ? parsed.windows : {},
-        models: parsed.models,
-        days: Array.isArray(parsed.days) ? parsed.days : [],
-        totals: parsed.totals && typeof parsed.totals === "object"
-          ? parsed.totals : { messages: 0, tokens: 0, cost: 0 },
+        catalog: parsed.catalog,
+        pricing: parsed.pricing && typeof parsed.pricing === "object" ? parsed.pricing : {},
         updatedAt: String(parsed.updatedAt || ""),
         error: String(parsed.error || "")
       }
     }
   } catch (error) {
-    return { ok: false, error: "Could not parse OpenCode Go usage" }
+    return { ok: false, error: "Could not parse OpenCode Go data" }
   }
 }
 
@@ -143,102 +141,171 @@ function providerTag(provider) {
   return String(provider || "?").split("-")[0]
 }
 
-// ---- sorting / summarising ----------------------------------------------
+// ---- Go catalog: live pricing + computed quota picks -----------------------
+// Typical agent turn (OpenCode Go docs, MiMo-V2.5 pattern). Used to estimate
+// ~requests per 5h from current $/M: floor($12 rolling budget / cost/request).
+var TYPICAL = { input: 830, cache: 71500, output: 295 }
+var ROLLING_BUDGET_USD = 12
 
-function cmpDesc(a, b) { return b - a }
+// Models excluded from automated picks (still listed in catalog).
+var GO_EXCLUDE = {
+  "muse-spark-1.2-contributor": "trains on prompts"
+}
 
-function sortModels(models, sortBy) {
-  var list = (Array.isArray(models) ? models : []).slice()
-  list.sort(function(a, b) {
-    var primary
-    if (sortBy === "tokens") {
-      primary = number(b.tokens ? b.tokens.total : 0, 0) - number(a.tokens ? a.tokens.total : 0, 0)
-    } else if (sortBy === "messages") {
-      primary = number(b.messages, 0) - number(a.messages, 0)
-    } else {
-      primary = number(b.cost, 0) - number(a.cost, 0)
+function requestCostUsd(live) {
+  if (!live) return Infinity
+  var cin = number(live.in, 0)
+  var cout = number(live.out, 0)
+  var ccache = number(live.cache, cin * 0.02)
+  return (TYPICAL.input * cin + TYPICAL.cache * ccache + TYPICAL.output * cout) / 1e6
+}
+
+function estimateReq5h(live) {
+  var cost = requestCostUsd(live)
+  return cost > 0 && isFinite(cost) ? Math.floor(ROLLING_BUDGET_USD / cost) : 0
+}
+
+function pricePer1M(value) {
+  var amount = number(value, -1)
+  if (amount < 0) return "—"
+  if (amount >= 1) return "$" + amount.toFixed(2) + "/M"
+  if (amount >= 0.1) return "$" + amount.toFixed(2) + "/M"
+  return "$" + amount.toFixed(3) + "/M"
+}
+
+function formatReq5h(value) {
+  var n = number(value, 0)
+  if (n <= 0) return "—"
+  if (n >= 1000) return "~" + tokenCount(n) + " req/5h"
+  return "~" + n + " req/5h"
+}
+
+function blendedCost(meta) {
+  if (!meta) return Infinity
+  return number(meta.in, Infinity) + number(meta.out, Infinity)
+}
+
+function catalogEntry(id, pricingMap, pickKind) {
+  var key = String(id || "")
+  var live = pricingMap && pricingMap[key] ? pricingMap[key] : null
+  var hasPricing = !!(live && isFinite(number(live.in, NaN)) && isFinite(number(live.out, NaN)))
+  return {
+    id: key,
+    displayName: key,
+    inputPer1M: hasPricing ? number(live.in, -1) : -1,
+    outputPer1M: hasPricing ? number(live.out, -1) : -1,
+    requests5h: hasPricing ? estimateReq5h(live) : 0,
+    pick: pickKind ? String(pickKind) : "",
+    note: GO_EXCLUDE[key] ? String(GO_EXCLUDE[key]) : "",
+    hasPricing: hasPricing,
+    isOther: false
+  }
+}
+
+function buildPickCandidates(ids, pricingMap) {
+  var out = []
+  var i, id, live, req, blended
+  for (i = 0; i < (Array.isArray(ids) ? ids.length : 0); i++) {
+    id = String(ids[i] || "")
+    if (!id || GO_EXCLUDE[id]) continue
+    live = pricingMap && pricingMap[id] ? pricingMap[id] : null
+    if (!live || !isFinite(number(live.in, NaN)) || !isFinite(number(live.out, NaN))) continue
+    req = estimateReq5h(live)
+    if (req <= 0) continue
+    blended = blendedCost(live)
+    out.push({ id: id, requests5h: req, blended: blended, live: live })
+  }
+  return out
+}
+
+// Stretch quota = most ~req/5h at current prices. Best value = highest quota
+// among capable mid-tier models (skip the single stretch winner).
+function catalogPicks(ids, pricingMap) {
+  var candidates = buildPickCandidates(ids, pricingMap)
+  if (!candidates.length) return { volume: null, value: null }
+
+  candidates.sort(function(a, b) {
+    var q = number(b.requests5h, 0) - number(a.requests5h, 0)
+    return q !== 0 ? q : String(a.id).localeCompare(String(b.id))
+  })
+
+  var volumeId = candidates[0].id
+  var valueId = ""
+  var bestReq = 0
+  var i, entry
+  for (i = 0; i < candidates.length; i++) {
+    entry = candidates[i]
+    if (entry.id === volumeId) continue
+    if (number(entry.requests5h, 0) > bestReq) {
+      bestReq = number(entry.requests5h, 0)
+      valueId = entry.id
     }
-    if (primary !== 0) return primary
-    // ties: more tokens first
-    return number(b.tokens ? b.tokens.total : 0, 0) - number(a.tokens ? a.tokens.total : 0, 0)
+  }
+  if (!valueId && candidates.length > 1) valueId = candidates[1].id
+
+  return {
+    volume: catalogEntry(volumeId, pricingMap, "volume"),
+    value: valueId ? catalogEntry(valueId, pricingMap, "value") : null
+  }
+}
+
+function markPicks(entries, picks) {
+  var volumeId = picks && picks.volume ? picks.volume.id : ""
+  var valueId = picks && picks.value ? picks.value.id : ""
+  var i, entry
+  for (i = 0; i < entries.length; i++) {
+    entry = entries[i]
+    if (entry.isOther) continue
+    if (entry.id === volumeId) entry.pick = "volume"
+    else if (entry.id === valueId) entry.pick = "value"
+    else entry.pick = ""
+  }
+  return entries
+}
+
+function sortCatalog(entries, sortBy) {
+  var list = entries.slice()
+  list.sort(function(a, b) {
+    if (sortBy === "quota") {
+      var q = number(b.requests5h, 0) - number(a.requests5h, 0)
+      if (q !== 0) return q
+    } else if (sortBy === "name") {
+      var n = String(a.displayName).localeCompare(String(b.displayName))
+      if (n !== 0) return n
+    } else {
+      var c = blendedCost({ in: a.inputPer1M, out: a.outputPer1M })
+        - blendedCost({ in: b.inputPer1M, out: b.outputPer1M })
+      if (c !== 0) return c
+    }
+    return String(a.displayName).localeCompare(String(b.displayName))
   })
   return list
 }
 
-// Returns [{displayName, provider, model, messages, tokens, cost, isOther}]
-// Top maxN entries individually; the tail folds into one "other" bucket.
-function summarize(models, sortBy, maxN) {
-  var sorted = sortModels(models, sortBy)
-  var seen = {}
-  var i, entry
-  for (i = 0; i < sorted.length; i++) {
-    entry = sorted[i]
-    var base = shortName(entry.model)
-    if (seen[base] !== undefined && seen[base] !== providerTag(entry.provider)) {
-      entry.displayName = base + "@" + providerTag(entry.provider)
-    } else {
-      entry.displayName = base
-      seen[base] = providerTag(entry.provider)
-    }
-  }
-  var out = []
+function summarizeCatalog(ids, pricingMap, sortBy, maxN, picks) {
+  var entries = []
+  var i
+  for (i = 0; i < (Array.isArray(ids) ? ids.length : 0); i++)
+    entries.push(catalogEntry(ids[i], pricingMap, ""))
+  markPicks(entries, picks || catalogPicks(ids, pricingMap))
+  var sorted = sortCatalog(entries, sortBy)
   var limit = Math.max(1, maxN)
+  var out = []
   var other = null
   for (i = 0; i < sorted.length; i++) {
-    entry = sorted[i]
-    if (out.length < limit) {
-      out.push(entry)
-    } else {
-      if (!other) {
-        other = {
-          displayName: "other",
-          provider: "",
-          model: "",
-          messages: 0,
-          tokens: { total: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0 },
-          cost: 0,
-          isOther: true
-        }
-      }
-      other.messages += number(entry.messages, 0)
-      other.tokens.total += number(entry.tokens ? entry.tokens.total : 0, 0)
-      other.tokens.input += number(entry.tokens ? entry.tokens.input : 0, 0)
-      other.tokens.output += number(entry.tokens ? entry.tokens.output : 0, 0)
-      other.tokens.reasoning += number(entry.tokens ? entry.tokens.reasoning : 0, 0)
-      other.tokens.cacheRead += number(entry.tokens ? entry.tokens.cacheRead : 0, 0)
-      other.tokens.cacheWrite += number(entry.tokens ? entry.tokens.cacheWrite : 0, 0)
-      other.cost += number(entry.cost, 0)
+    if (out.length < limit) out.push(sorted[i])
+    else {
+      if (!other) other = { displayName: "other (" + (sorted.length - limit) + ")", isOther: true, id: "", requests5h: 0, inputPer1M: -1, outputPer1M: -1, pick: "", note: "", hasPricing: false }
     }
   }
   if (other) out.push(other)
   return out
 }
 
-function maxTokenTotal(rows) {
-  var peak = 0
-  for (var i = 0; i < rows.length; i++) {
-    var t = rows[i].isOther ? rows[i].tokens.total : number(rows[i].tokens.total, 0)
-    peak = Math.max(peak, t)
-  }
-  return peak
-}
-
-// ---- sparkline -----------------------------------------------------------
-
-function dayTokens(day) { return Math.max(0, number(day && day.tokens, 0)) }
-
-function recentPeak(days) {
-  var list = Array.isArray(days) ? days : []
-  var peak = 0
-  for (var i = 0; i < list.length; i++) peak = Math.max(peak, dayTokens(list[i]))
-  return peak
-}
-
-function dayLabel(value) {
-  var match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ""))
-  if (!match) return "—"
-  var date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
-  return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][date.getDay()]
+function pickLabel(pick) {
+  if (pick === "volume") return "stretch quota"
+  if (pick === "value") return "best value"
+  return ""
 }
 
 var exportsObject = {
@@ -255,14 +322,13 @@ var exportsObject = {
   parseCollector: parseCollector,
   tokenCount: tokenCount,
   money: money,
+  pricePer1M: pricePer1M,
+  formatReq5h: formatReq5h,
   shortName: shortName,
   providerTag: providerTag,
-  sortModels: sortModels,
-  summarize: summarize,
-  maxTokenTotal: maxTokenTotal,
-  dayTokens: dayTokens,
-  recentPeak: recentPeak,
-  dayLabel: dayLabel
+  summarizeCatalog: summarizeCatalog,
+  catalogPicks: catalogPicks,
+  pickLabel: pickLabel
 }
 
 if (typeof module !== "undefined" && module.exports) module.exports = exportsObject
