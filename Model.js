@@ -49,6 +49,24 @@ function percent(value) {
   return Math.round(clamp(number(value, 0), 0, 1) * 100) + "%"
 }
 
+// Compact bar hover: "5h 42% · Weekly 31% · Monthly 18%"
+function tooltipLimits(windows, nowMs) {
+  if (!windows || typeof windows !== "object") return "OpenCode Go — no limits yet"
+  var specs = [
+    { key: "rolling", label: "5h" },
+    { key: "weekly", label: "Weekly" },
+    { key: "monthly", label: "Monthly" }
+  ]
+  var parts = []
+  for (var i = 0; i < specs.length; i++) {
+    var w = normalizeWindow(windows[specs[i].key], specs[i].key, nowMs)
+    if (!w) continue
+    parts.push(specs[i].label + " " + percent(w.percent))
+  }
+  if (!parts.length) return "OpenCode Go — no limits yet"
+  return parts.join(" · ")
+}
+
 function countdown(resetMs, nowMs) {
   if (!resetMs || resetMs <= nowMs) return "now"
   var minutes = Math.max(0, Math.floor((resetMs - nowMs) / 60000))
@@ -76,7 +94,7 @@ function parseCollector(text) {
     var parsed = JSON.parse(String(text || ""))
     if (!parsed || typeof parsed !== "object" || typeof parsed.status !== "string"
         || !Array.isArray(parsed.models)) {
-      return { ok: false, error: "Could not parse OpenCode usage" }
+      return { ok: false, error: "Could not parse OpenCode Go usage" }
     }
     return {
       ok: true,
@@ -91,7 +109,7 @@ function parseCollector(text) {
       }
     }
   } catch (error) {
-    return { ok: false, error: "Could not parse OpenCode usage" }
+    return { ok: false, error: "Could not parse OpenCode Go usage" }
   }
 }
 

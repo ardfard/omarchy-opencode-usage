@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# OpenCode Usage collector — reads the local opencode.db only (no network).
+# OpenCode Go usage collector — local opencode-go rows from opencode.db, plus
+# Go subscription limit windows from the Zen API when a key is present.
 # Emits one JSON object consumed by Model.parseCollector().
 set -uo pipefail
 
@@ -16,7 +17,7 @@ run_sql() {
   sqlite3 -readonly "file:$DB?mode=ro" "$1" 2>/dev/null
 }
 
-# ---- per-model rollup (assistant messages carry tokens + cost)
+# ---- per-model rollup (opencode-go assistant messages only)
 models=$(run_sql "
 SELECT COALESCE(json_group_array(json_object(
   'provider', provider, 'model', model, 'messages', messages,
@@ -35,12 +36,14 @@ FROM (
     SUM(COALESCE(json_extract(data,'\$.tokens.cache.write'),0))       AS tcw,
     ROUND(SUM(COALESCE(json_extract(data,'\$.cost'),0)),4)            AS cost
   FROM message
-  WHERE time_created > $cutoff AND json_extract(data,'\$.role')='assistant'
+  WHERE time_created > $cutoff
+    AND json_extract(data,'\$.role')='assistant'
+    AND json_extract(data,'\$.providerID')='opencode-go'
   GROUP BY 1, 2
 );") || models='[]'
 [[ -z $models ]] && models='[]'
 
-# ---- per-day totals (all roles count toward daily activity)
+# ---- per-day totals (opencode-go assistant messages only)
 days=$(run_sql "
 SELECT COALESCE(json_group_array(json_object(
   'date', d, 'messages', m, 'tokens', t, 'cost', c)), '[]')
@@ -51,6 +54,8 @@ FROM (
          ROUND(SUM(COALESCE(json_extract(data,'\$.cost'),0)),4)         AS c
   FROM message
   WHERE time_created > $cutoff
+    AND json_extract(data,'\$.role')='assistant'
+    AND json_extract(data,'\$.providerID')='opencode-go'
   GROUP BY d ORDER BY d
 );") || days='[]'
 [[ -z $days ]] && days='[]'
@@ -73,7 +78,7 @@ windows='null'
 if [[ -r $AUTH_JSON ]]; then
   go_key=$(jq -r '.["opencode-go"].key // empty' "$AUTH_JSON" 2>/dev/null || true)
   if [[ -n $go_key ]]; then
-    resp=$(curl -sS -m 10 "$GO_URL" -H "Authorization: Bearer $go_key" 2>/dev/null) || true
+    resp=$(printf 'header = "Authorization: Bearer %s"\n' "$go_key" | curl -sS -m 10 --config - "$GO_URL" 2>/dev/null) || true
     if [[ -n $resp ]]; then
       windows=$(printf '%s' "$resp" | jq -c '{rolling:.usage.rolling,weekly:.usage.weekly,monthly:.usage.monthly}' 2>/dev/null || echo 'null')
     fi

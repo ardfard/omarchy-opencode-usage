@@ -3,7 +3,7 @@
 set -euo pipefail
 
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEST_DIR="$HOME/.config/omarchy/plugins/local.opencode-usage"
+DEST_DIR="$HOME/.config/omarchy/plugins/local.opencode-go-usage"
 
 echo "==> Copying $SRC_DIR → $DEST_DIR"
 mkdir -p "$DEST_DIR"

@@ -10,8 +10,8 @@ import "Model.js" as Model
 
 Panel {
   id: root
-  moduleName: "local.opencode-usage"
-  ipcTarget: "local.opencode-usage"
+  moduleName: "local.opencode-go-usage"
+  ipcTarget: "local.opencode-go-usage"
 
   // ---- injected / derived chrome -----------------------------------------
   readonly property color foreground: bar ? bar.barForeground : Color.foreground
@@ -66,11 +66,7 @@ Panel {
     text: "·"
     labelVisible: false
     fixedWidth: Style.space(32)
-    tooltipText: {
-      if (!root.hasData) return "OpenCode usage — no data yet"
-      return "OpenCode usage · " + Model.tokenCount(root.safeTotals.tokens) + " tok · "
-        + Model.money(root.safeTotals.cost) + " · click for details"
-    }
+    tooltipText: Model.tooltipLimits(service.windows, root.nowMs)
     active: false
     onPressed: function(buttonCode) {
       if (buttonCode === Qt.RightButton || buttonCode === Qt.MiddleButton) root.refresh()
@@ -130,10 +126,11 @@ Panel {
             implicitHeight: Math.max(headerTitle.implicitHeight, headerMeta.implicitHeight)
 
             Text {
+              textFormat: Text.PlainText
               id: headerTitle
               anchors.left: parent.left
               anchors.verticalCenter: parent.verticalCenter
-              text: "OpenCode Usage"
+              text: "OpenCode Go"
               color: root.foreground
               font.family: root.fontFamily
               font.pixelSize: Style.font.subtitle
@@ -141,6 +138,7 @@ Panel {
             }
 
             Text {
+              textFormat: Text.PlainText
               id: headerMeta
               anchors.right: parent.right
               anchors.verticalCenter: parent.verticalCenter
@@ -153,6 +151,7 @@ Panel {
           }
 
           Text {
+            textFormat: Text.PlainText
             visible: service.lastError !== ""
             width: parent.width
             text: service.lastError
@@ -163,9 +162,10 @@ Panel {
           }
 
           Text {
+            textFormat: Text.PlainText
             visible: !service.refreshing && !root.hasData && service.lastError === ""
             width: parent.width
-            text: "No assistant messages in the last " + service.windowDays + " day(s)."
+            text: "No Go usage logged in the last " + service.windowDays + " day(s)."
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
@@ -180,6 +180,7 @@ Panel {
             implicitHeight: Math.max(limitHeader.implicitHeight, limitMeta.implicitHeight)
 
             Text {
+              textFormat: Text.PlainText
               id: limitHeader
               anchors.left: parent.left
               anchors.verticalCenter: parent.verticalCenter
@@ -191,6 +192,7 @@ Panel {
             }
 
             Text {
+              textFormat: Text.PlainText
               id: limitMeta
               anchors.right: parent.right
               anchors.verticalCenter: parent.verticalCenter
@@ -221,6 +223,7 @@ Panel {
                 spacing: Style.space(6)
 
                 Text {
+                  textFormat: Text.PlainText
                   Layout.preferredWidth: Style.space(52)
                   text: modelData.label
                   color: root.dim
@@ -246,6 +249,7 @@ Panel {
                 }
 
                 Text {
+                  textFormat: Text.PlainText
                   Layout.preferredWidth: Style.space(44)
                   text: windowRow.w ? Model.percent(windowRow.w.percent) : "—"
                   horizontalAlignment: Text.AlignRight
@@ -257,6 +261,7 @@ Panel {
               }
 
               Text {
+                textFormat: Text.PlainText
                 width: parent.width
                 visible: !!windowRow.w
                 text: "resets " + (windowRow.w ? Model.countdown(windowRow.w.resetMs, root.nowMs) : "")
@@ -268,6 +273,16 @@ Panel {
             }
           }
 
+          Text {
+            textFormat: Text.PlainText
+            width: parent.width
+            text: "Best value on Go: MiMo-V2.5 (stretches $ limits furthest)"
+            color: root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            wrapMode: Text.WordWrap
+          }
+
           PanelSeparator { width: parent.width; foreground: root.foreground }
 
           // totals strip: three inline figures instead of cards
@@ -276,18 +291,18 @@ Panel {
 
             Column {
               width: parent.width / 3
-              Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: root.hasData ? Model.tokenCount(root.safeTotals.tokens) : "—"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall; font.bold: true }
-              Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: "tokens"; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+              Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: root.hasData ? Model.tokenCount(root.safeTotals.tokens) : "—"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall; font.bold: true; textFormat: Text.PlainText }
+              Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: "tokens"; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; textFormat: Text.PlainText }
             }
             Column {
               width: parent.width / 3
-              Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: root.hasData ? String(root.safeTotals.messages) : "—"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall; font.bold: true }
-              Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: "messages"; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+              Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: root.hasData ? String(root.safeTotals.messages) : "—"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall; font.bold: true; textFormat: Text.PlainText }
+              Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: "messages"; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; textFormat: Text.PlainText }
             }
             Column {
               width: parent.width / 3
-              Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: root.hasData ? Model.money(root.safeTotals.cost) : "—"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall; font.bold: true }
-              Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: "cost"; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+              Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: root.hasData ? Model.money(root.safeTotals.cost) : "—"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall; font.bold: true; textFormat: Text.PlainText }
+              Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: "cost"; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption; textFormat: Text.PlainText }
             }
           }
 
@@ -322,6 +337,7 @@ Panel {
                 spacing: Style.space(3)
 
                 Text {
+                  textFormat: Text.PlainText
                   width: parent.width
                   visible: dayChart.showValues
                   horizontalAlignment: Text.AlignHCenter
@@ -350,6 +366,7 @@ Panel {
                 }
 
                 Text {
+                  textFormat: Text.PlainText
                   width: parent.width
                   visible: dayChart.showLabels
                   horizontalAlignment: Text.AlignHCenter
@@ -370,6 +387,7 @@ Panel {
             implicitHeight: Math.max(modelsHeader.implicitHeight, sortLabel.implicitHeight)
 
             Text {
+              textFormat: Text.PlainText
               id: modelsHeader
               anchors.left: parent.left
               anchors.verticalCenter: parent.verticalCenter
@@ -381,6 +399,7 @@ Panel {
             }
 
             Text {
+              textFormat: Text.PlainText
               id: sortLabel
               anchors.right: parent.right
               anchors.verticalCenter: parent.verticalCenter
@@ -405,6 +424,7 @@ Panel {
                 Layout.alignment: Qt.AlignVCenter
 
                 Text {
+                  textFormat: Text.PlainText
                   width: parent.width
                   text: modelData.displayName
                   color: modelData.isOther ? root.dim : root.foreground
@@ -414,6 +434,7 @@ Panel {
                 }
 
                 Text {
+                  textFormat: Text.PlainText
                   width: parent.width
                   visible: !modelData.isOther
                   text: Model.providerTag(modelData.provider)
@@ -429,6 +450,7 @@ Panel {
                 Layout.alignment: Qt.AlignVCenter
 
                 Text {
+                  textFormat: Text.PlainText
                   anchors.right: parent.right
                   text: Model.tokenCount(modelData.tokens.total) + " tok"
                   color: root.foreground
@@ -438,6 +460,7 @@ Panel {
                 }
 
                 Text {
+                  textFormat: Text.PlainText
                   anchors.right: parent.right
                   text: modelData.isOther
                     ? Model.tokenCount(modelData.messages) + " msgs"
@@ -451,6 +474,7 @@ Panel {
           }
 
           Text {
+            textFormat: Text.PlainText
             visible: !root.rows.length && !service.refreshing
             width: parent.width
             text: "No models."
