@@ -89,21 +89,66 @@ function clamp(value, minimum, maximum) {
   return Math.max(minimum, Math.min(maximum, value))
 }
 
+var MAX_COLLECTOR_BYTES = 512 * 1024
+var MAX_CATALOG_IDS = 500
+var MAX_MODEL_ID_LEN = 128
+
+function sanitizeModelId(value) {
+  var id = String(value || "").slice(0, MAX_MODEL_ID_LEN)
+  return id ? id : ""
+}
+
+function sanitizeCatalog(catalog) {
+  if (!Array.isArray(catalog)) return []
+  var out = []
+  var i, id
+  for (i = 0; i < catalog.length && out.length < MAX_CATALOG_IDS; i++) {
+    id = sanitizeModelId(catalog[i])
+    if (id) out.push(id)
+  }
+  return out
+}
+
+function sanitizePricing(pricing, catalog) {
+  if (!pricing || typeof pricing !== "object") return {}
+  var allowed = {}
+  var i
+  for (i = 0; i < catalog.length; i++) allowed[catalog[i]] = true
+  var out = {}
+  var key, entry, live
+  for (key in pricing) {
+    if (!allowed[key]) continue
+    entry = pricing[key]
+    if (!entry || typeof entry !== "object") continue
+    live = {
+      in: number(entry.in, 0),
+      out: number(entry.out, 0),
+      cache: number(entry.cache, 0)
+    }
+    if (isFinite(live.in) && isFinite(live.out)) out[key] = live
+  }
+  return out
+}
+
 function parseCollector(text) {
   try {
-    var parsed = JSON.parse(String(text || ""))
+    var raw = String(text || "")
+    if (raw.length > MAX_COLLECTOR_BYTES)
+      return { ok: false, error: "Collector output too large" }
+    var parsed = JSON.parse(raw)
     if (!parsed || typeof parsed !== "object" || typeof parsed.status !== "string"
         || !Array.isArray(parsed.catalog)) {
       return { ok: false, error: "Could not parse OpenCode Go data" }
     }
+    var catalog = sanitizeCatalog(parsed.catalog)
     return {
       ok: true,
       data: {
         windows: parsed.windows && typeof parsed.windows === "object" ? parsed.windows : {},
-        catalog: parsed.catalog,
-        pricing: parsed.pricing && typeof parsed.pricing === "object" ? parsed.pricing : {},
-        updatedAt: String(parsed.updatedAt || ""),
-        error: String(parsed.error || "")
+        catalog: catalog,
+        pricing: sanitizePricing(parsed.pricing, catalog),
+        updatedAt: String(parsed.updatedAt || "").slice(0, 40),
+        error: String(parsed.error || "").slice(0, 180)
       }
     }
   } catch (error) {

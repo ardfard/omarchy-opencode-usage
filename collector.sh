@@ -6,41 +6,45 @@ GO_BASE="${OPENCODE_GO_BASE:-https://opencode.ai/zen/go/v1}"
 MODELS_DEV="${OPENCODE_MODELS_DEV:-https://models.dev/api.json}"
 AUTH_JSON="${OPENCODE_AUTH_JSON:-$HOME/.local/share/opencode/auth.json}"
 
-# ---- model catalog (public) -----------------------------------------------
-catalog='[]'
-resp=$(curl -sS -m 15 "$GO_BASE/models" 2>/dev/null) || true
-if [[ -n $resp ]]; then
-  catalog=$(printf '%s' "$resp" | jq -c '[.data[]?.id // empty] | map(select(. != ""))' 2>/dev/null || echo '[]')
-fi
-[[ -z $catalog ]] && catalog='[]'
+MAX_CATALOG="${OPENCODE_MAX_CATALOG:-200}"
+case "$MAX_CATALOG" in *[!0-9]*|"") MAX_CATALOG=200 ;; esac
+MAX_CATALOG=$(( MAX_CATALOG > 500 ? 500 : (MAX_CATALOG < 1 ? 1 : MAX_CATALOG) ))
 
-# ---- current $/1M pricing (models.dev tracks promos for opencode-go) --------
+# ---- model catalog (public); stream + cap, never hold full HTTP body ------------
+catalog=$(curl -sS -m 15 "$GO_BASE/models" 2>/dev/null \
+  | jq -c --argjson max "$MAX_CATALOG" '
+      [.data[]?.id // empty | select(. != "" and (type == "string") and length <= 128)] | .[:$max]
+    ' 2>/dev/null || echo '[]')
+[[ -z $catalog || $catalog == 'null' ]] && catalog='[]'
+
+# ---- current $/1M pricing; only entries for catalog IDs, streamed --------------
 pricing='{}'
-resp=$(curl -sS -m 15 "$MODELS_DEV" 2>/dev/null) || true
-if [[ -n $resp ]]; then
-  pricing=$(printf '%s' "$resp" | jq -c '
-    (.["opencode-go"].models // {}) | to_entries
-    | map(select(.value.cost))
-    | map({key: .key, value: {
-        in: (.value.cost.input // 0),
-        out: (.value.cost.output // 0),
-        cache: (.value.cost.cache_read // 0)
-      }})
-    | from_entries
-  ' 2>/dev/null || echo '{}')
+if [[ $catalog != '[]' ]]; then
+  pricing=$(curl -sS -m 15 "$MODELS_DEV" 2>/dev/null \
+    | jq -c --argjson ids "$catalog" '
+        (.["opencode-go"].models // {}) | to_entries
+        | map(select(.value.cost and (.key as $k | ($ids | index($k)))))
+        | map({key: .key, value: {
+            in: (.value.cost.input // 0),
+            out: (.value.cost.output // 0),
+            cache: (.value.cost.cache_read // 0)
+          }})
+        | from_entries
+      ' 2>/dev/null || echo '{}')
 fi
-[[ -z $pricing ]] && pricing='{}'
+[[ -z $pricing || $pricing == 'null' ]] && pricing='{}'
 
-# ---- subscription limit windows (needs Go key) ----------------------------
+# ---- subscription limit windows (needs Go key) --------------------------------
+# Key stays in jq→curl stdin; never on curl argv and not stored in a shell var.
 windows='null'
 if [[ -r $AUTH_JSON ]]; then
-  go_key=$(jq -r '.["opencode-go"].key // empty' "$AUTH_JSON" 2>/dev/null || true)
-  if [[ -n $go_key ]]; then
-    resp=$(printf 'header = "Authorization: Bearer %s"\n' "$go_key" | curl -sS -m 10 --config - "$GO_BASE/usage" 2>/dev/null) || true
-    if [[ -n $resp ]]; then
-      windows=$(printf '%s' "$resp" | jq -c '{rolling:.usage.rolling,weekly:.usage.weekly,monthly:.usage.monthly}' 2>/dev/null || echo 'null')
-    fi
-  fi
+  windows=$(
+    jq -r '.["opencode-go"].key // empty | select(length > 0)
+      | "header = \"Authorization: Bearer \(.)\""' "$AUTH_JSON" 2>/dev/null \
+      | curl -sS -m 10 --config - "$GO_BASE/usage" 2>/dev/null \
+      | jq -c '{rolling:.usage.rolling,weekly:.usage.weekly,monthly:.usage.monthly}' 2>/dev/null \
+      || echo 'null'
+  )
 fi
 [[ -z $windows || $windows == 'null' ]] && windows='null'
 

@@ -17,6 +17,7 @@ Item {
   readonly property string collectorScript: decodeURIComponent(String(Qt.resolvedUrl("collector.sh")).replace(/^file:\/\//, ""))
   readonly property int refreshIntervalSec: intSetting("refreshIntervalSec", 3600, 60, 3600)
   readonly property int maxModels: intSetting("maxModels", 12, 3, 30)
+  readonly property int maxCatalogIds: Math.min(500, Math.max(50, maxModels * 5))
   readonly property int picksRefreshSec: 86400
 
   function setting(name, fallback) {
@@ -34,7 +35,7 @@ Item {
     if (refreshing || collector.running) return
     refreshing = true
     lastError = ""
-    collector.command = ["bash", root.collectorScript]
+    collector.command = ["env", "OPENCODE_MAX_CATALOG=" + root.maxCatalogIds, "bash", root.collectorScript]
     collector.running = true
   }
 
