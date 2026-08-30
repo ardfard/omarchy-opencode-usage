@@ -21,10 +21,7 @@ Inspired by [local.opencode-go](https://omarchyplugins.com/plugin.html?id=local.
 ## Install
 
 ```bash
-git clone https://github.com/ardfard/omarchy-opencode-usage.git
-cd omarchy-opencode-usage
-./install.sh
-omarchy plugin enable local.opencode-go-usage
+omarchy plugin add https://github.com/ardfard/omarchy-opencode-usage.git --enable
 ```
 
 Put your Go key in `~/.local/share/opencode/auth.json` under `opencode-go`
@@ -34,10 +31,7 @@ Put your Go key in `~/.local/share/opencode/auth.json` under `opencode-go`
 ## Remove
 
 ```bash
-omarchy plugin disable local.opencode-go-usage
 omarchy plugin remove local.opencode-go-usage
-rm -rf ~/.config/omarchy/plugins/local.opencode-go-usage
-omarchy shell shell rescanPlugins
 ```
 
 ## Dependencies
