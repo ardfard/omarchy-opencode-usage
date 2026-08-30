@@ -118,17 +118,18 @@ Panel {
             width: parent.width
             implicitHeight: Math.max(headerIcon.implicitHeight, headerTitle.implicitHeight, headerMeta.implicitHeight)
 
-            // Hero icon — same pattern as the network panel: Nerd Font glyph at
-            // display size left of the title. f0483 = mdi:speedometer.
-            Text {
-              textFormat: Text.PlainText
+            Image {
               id: headerIcon
               anchors.left: parent.left
               anchors.verticalCenter: parent.verticalCenter
-              text: "\uF0483"
-              color: root.foreground
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.subtitle * 1.5
+              width: Math.round(Style.font.subtitle * 1.2)
+              height: width
+              fillMode: Image.PreserveAspectFit
+              sourceSize.width: Math.round(width * Screen.devicePixelRatio)
+              sourceSize.height: Math.round(height * Screen.devicePixelRatio)
+              smooth: true
+              mipmap: true
+              source: Qt.resolvedUrl("assets/opencode-logo.png")
             }
 
             Text {
