@@ -76,7 +76,7 @@ Panel {
       fillMode: Image.PreserveAspectFit
       sourceSize.width: Math.round(width * Screen.devicePixelRatio)
       sourceSize.height: Math.round(height * Screen.devicePixelRatio)
-      source: Qt.resolvedUrl("assets/opencode-usage.png")
+      source: Qt.resolvedUrl("assets/opencode-go-usage.png")
     }
   }
 
@@ -116,12 +116,26 @@ Panel {
 
           Item {
             width: parent.width
-            implicitHeight: Math.max(headerTitle.implicitHeight, headerMeta.implicitHeight)
+            implicitHeight: Math.max(headerIcon.implicitHeight, headerTitle.implicitHeight, headerMeta.implicitHeight)
+
+            // Hero icon — same pattern as the network panel: Nerd Font glyph at
+            // display size left of the title. f0483 = mdi:speedometer.
+            Text {
+              textFormat: Text.PlainText
+              id: headerIcon
+              anchors.left: parent.left
+              anchors.verticalCenter: parent.verticalCenter
+              text: "\uF0483"
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.subtitle * 1.5
+            }
 
             Text {
               textFormat: Text.PlainText
               id: headerTitle
-              anchors.left: parent.left
+              anchors.left: headerIcon.right
+              anchors.leftMargin: Style.space(4)
               anchors.verticalCenter: parent.verticalCenter
               text: "OpenCode Go"
               color: root.foreground
@@ -270,9 +284,9 @@ Panel {
           Text {
             textFormat: Text.PlainText
             width: parent.width
-            visible: !!root.picks.volume
-            text: "Stretch quota: opencode-go/" + root.picks.volume.id
-              + " · " + Model.formatReq5h(root.picks.volume.requests5h)
+            visible: !!root.picks && !!root.picks.volume
+            text: "Stretch quota: opencode-go/" + (root.picks && root.picks.volume ? root.picks.volume.id : "")
+              + " · " + (root.picks && root.picks.volume ? Model.formatReq5h(root.picks.volume.requests5h) : "")
             color: root.foreground
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
@@ -282,9 +296,9 @@ Panel {
           Text {
             textFormat: Text.PlainText
             width: parent.width
-            visible: !!root.picks.value
-            text: "Best value: opencode-go/" + root.picks.value.id
-              + " · " + Model.formatReq5h(root.picks.value.requests5h)
+            visible: !!root.picks && !!root.picks.value
+            text: "Best value: opencode-go/" + (root.picks && root.picks.value ? root.picks.value.id : "")
+              + " · " + (root.picks && root.picks.value ? Model.formatReq5h(root.picks.value.requests5h) : "")
             color: root.foreground
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
